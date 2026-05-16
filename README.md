@@ -448,7 +448,7 @@ A performance report is written to the console every 30 seconds:
 
 Quality measurement functions defined in the `evaluation/metrics.py` file:
 
-| Metric |  Function | Target |
+| Metric | Function  | Target |
 |--------|-----------|-------|
 | **MCD** (Mel-Cepstral Distortion) | `calculate_mcd()` | Cloned voice quality (lower = better) |
 | **SNR** (Signal-to-Noise Ratio) | `calculate_snr()` | Voice signal-to-noise ratio (higher = better) |
