@@ -1,55 +1,55 @@
-# 🎭 DeepFake Live — Gerçek Zamanlı Yüz Değiştirme & Ses Klonlama Platformu
+# Real-Time Deepfake Face and Voice Transformation System
 
-> **WebRTC + InsightFace + XTTSv2 + Gemini AI** tabanlı, GPU hızlandırmalı gerçek zamanlı deepfake video ve ses klonlama sistemi.
-
----
-
-## 📋 İçindekiler
-
-- [Genel Bakış](#-genel-bakış)
-- [Mimari Diyagram](#-mimari-diyagram)
-- [Servis Mimarisi](#-servis-mimarisi)
-- [Dosya Yapısı](#-dosya-yapısı)
-- [Teknoloji Yığını](#-teknoloji-yığını)
-- [Kurulum & Başlatma](#-kurulum--başlatma)
-- [API Endpoint'leri](#-api-endpointleri)
-- [Ortam Değişkenleri](#-ortam-değişkenleri)
-- [Performans Optimizasyonları](#-performans-optimizasyonları)
-- [Değerlendirme Metrikleri](#-değerlendirme-metrikleri)
+> GPU-accelerated real-time deepfake video and voice cloning system based on WebRTC, InsightFace, XTTSv2, and Gemini AI.
 
 ---
 
-## 🔭 Genel Bakış
+## Table of Contents
 
-Bu proje, **4 bağımsız mikro servis**ten oluşan dağıtık bir deepfake platformudur:
+- [Overview](#overview)
+- [Architecture Diagram](#architecture-diagram)
+- [Service Architecture](#service-architecture)
+- [Directory Structure](#directory-structure)
+- [Technology Stack](#technology-stack)
+- [Installation and Setup](#installation-and-setup)
+- [API Endpoints](#api-endpoints)
+- [Environment Variables](#environment-variables)
+- [Performance Optimizations](#performance-optimizations)
+- [Evaluation Metrics](#evaluation-metrics)
 
-| # | Servis | Port | Konum | Açıklama |
+---
+
+## Overview
+
+This project is a distributed deepfake platform consisting of 4 independent microservices:
+
+| # | Service | Port | Location | Description |
 |---|--------|------|-------|----------|
-| 1 | **GPU Worker** | `8001` | Yerel (RTX 3050 Ti) | WebRTC video işleme + yüz değiştirme + ses klonlama API |
-| 2 | **Signaling Server** | `8000` | AWS t2.micro / Yerel | WebSocket relay — SDP/ICE sinyalizasyonu |
-| 3 | **React Frontend** | `5173` | AWS / Yerel | Vite + React kullanıcı arayüzü |
-| 4 | **TTS Microservice** | `8002` | Yerel | XTTSv2 ses klonlama servisi (izole Python 3.10) |
+| 1 | **GPU Worker** | `8001` | Local (RTX 3050 Ti) | WebRTC video processing + face swap + voice cloning API |
+| 2 | **Signaling Server** | `8000` | AWS t2.micro / Local | WebSocket relay — SDP/ICE signaling |
+| 3 | **React Frontend** | `5173` | AWS / Local | Vite + React user interface |
+| 4 | **TTS Microservice** | `8002` | Local | XTTSv2 voice cloning service (isolated Python 3.10) |
 
-**Ek olarak** `web/` klasöründe eski mimari için Socket.IO tabanlı legacy bir HTML arayüzü ve `main.py` kökünde Ngrok'suz doğrudan WebSocket bağlantılı alternatif bir GPU worker bulunur.
+Additionally, there is a legacy Socket.IO based HTML interface in the `web/` folder for the old architecture, and an alternative GPU worker with direct WebSocket connection without Ngrok in the root `main.py`.
 
 ---
 
-## 🏗 Mimari Diyagram
+## Architecture Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                      TARAYICI (Kullanıcı)                       │
-│   React 19 + Vite 8  (aws_server/frontend/)                    │
+│                      BROWSER (Client)                           │
+│   React 19 + Vite 8  (aws_server/frontend/)                     │
 │                                                                 │
 │   Hooks:                                                        │
-│     useWebRTC.js ─── WebSocket sinyalizasyon + RTCPeerConnection│
-│     useMediaConstraints.js ─── Kamera/mikrofon yönetimi         │
-│     useAsyncModules.js ─── Ekran paylaşım & kayıt modülleri    │
+│     useWebRTC.js ─── WebSocket signaling + RTCPeerConnection    │
+│     useMediaConstraints.js ─── Camera/microphone management     │
+│     useAsyncModules.js ─── Screen share & recording modules     │
 │                                                                 │
 │   Modules:                                                      │
-│     VoiceCloneModule.js ── Ses kayıt & yükleme                  │
-│     ScreenShareModule.js ── Ekran paylaşımı                     │
-│     MeetingRecordModule.js ── Toplantı kaydı                    │
+│     VoiceCloneModule.js ── Voice recording & upload             │
+│     ScreenShareModule.js ── Screen sharing                      │
+│     MeetingRecordModule.js ── Meeting recording                 │
 └────────────┬──────────────────────────────────┬─────────────────┘
              │ WebSocket (SDP/ICE)              │ P2P WebRTC Video
              ▼                                  │
@@ -61,170 +61,170 @@ Bu proje, **4 bağımsız mikro servis**ten oluşan dağıtık bir deepfake plat
 │         │                          │          │
 │         │ HTTP POST (offer/ice)    │          │
 │         ▼                          │          │
-│  /ws/worker  ← GPU Worker (opsiy.) │          │
-│  (Ngrok-free doğrudan WS modu)     │          │
+│  /ws/worker  ← GPU Worker (opt.)   │          │
+│  (Ngrok-free direct WS mode)       │          │
 └────────────────────────────────────┘          │
                                                 ▼
                   ┌──────────────────────────────────────────┐
-                  │  GPU Worker (port 8001)                   │
-                  │  gpu_worker/api.py                        │
+                  │  GPU Worker (port 8001)                  │
+                  │  gpu_worker/api.py                       │
                   │                                          │
                   │  ┌─ aiortc WebRTC Handler ──────────┐    │
-                  │  │  rtc_worker.py                    │    │
-                  │  │  DeepFakeVideoTrack (v2)          │    │
-                  │  │    ├─ FaceBBoxCache               │    │
-                  │  │    ├─ AdaptiveFrameDropper         │    │
-                  │  │    └─ FaceSwapper (CUDA)           │    │
+                  │  │  rtc_worker.py                   │    │
+                  │  │  DeepFakeVideoTrack (v2)         │    │
+                  │  │    ├─ FaceBBoxCache              │    │
+                  │  │    ├─ AdaptiveFrameDropper       │    │
+                  │  │    └─ FaceSwapper (CUDA)         │    │
                   │  └──────────────────────────────────┘    │
                   │                                          │
                   │  ┌─ Voice Cloning Client ───────────┐    │
-                  │  │  /api/chat                        │    │
-                  │  │  /api/voices                      │    │
-                  │  │  /api/upload-voice        ────────┼──► TTS Microservice
+                  │  │  /api/chat                       │    │
+                  │  │  /api/voices                     │    │
+                  │  │  /api/upload-voice       ────────┼──► TTS Microservice
                   │  └──────────────────────────────────┘    │  (port 8002)
                   │                                          │
                   │  GPU: NVIDIA RTX 3050 Ti                 │
-                  │  CUDA + cuDNN + ONNXRuntime-GPU           │
+                  │  CUDA + cuDNN + ONNXRuntime-GPU          │
                   └──────────────────────────────────────────┘
                                                 │
                                                 ▼
                   ┌──────────────────────────────────────────┐
-                  │  TTS Microservice (port 8002)             │
-                  │  tts_service/tts_service.py               │
+                  │  TTS Microservice (port 8002)            │
+                  │  tts_service/tts_service.py              │
                   │                                          │
                   │  XTTSv2 (Coqui TTS)                      │
-                  │  POST /generate-audio/                    │
-                  │  Referans sesler: tts_service/references/  │
+                  │  POST /generate-audio/                   │
+                  │  Reference voices: tts_service/references│
                   └──────────────────────────────────────────┘
 ```
 
 ---
 
-## 🧩 Servis Mimarisi
+## Service Architecture
 
 ### 1. GPU Worker (`gpu_worker/`)
 
-Ana işlem birimi. WebRTC bağlantılarını yönetir ve gelen video karelerini GPU üzerinde işler.
+The main processing unit. It manages WebRTC connections and processes incoming video frames on the GPU.
 
-**Temel dosyalar:**
+**Core files:**
 
-| Dosya | Görev |
+| File | Purpose |
 |-------|-------|
-| `api.py` | FastAPI sunucusu — WebRTC offer/answer, chat, ses yükleme endpoint'leri |
-| `rtc_worker.py` | `DeepFakeVideoTrack` sınıfı — aiortc VideoTransformTrack (v2 optimizasyonlu) |
-| `start_worker.bat` | Sanal ortamı aktive edip GPU worker'ı başlatan script |
-| `start_ngrok.bat` | Ngrok tüneli (opsiyonel, dışarıya açma) |
+| `api.py` | FastAPI server — WebRTC offer/answer, chat, voice upload endpoints |
+| `rtc_worker.py` | `DeepFakeVideoTrack` class — aiortc VideoTransformTrack (v2 optimized) |
+| `start_worker.bat` | Script to activate the virtual environment and start the GPU worker |
+| `start_ngrok.bat` | Ngrok tunnel (optional, for exposing to the internet) |
 
-**WebRTC Akışı:**
-1. React tarayıcıdan SDP Offer → Signaling Server → GPU Worker `/webrtc/offer`
-2. GPU Worker `RTCPeerConnection` oluşturur
-3. Gelen video track `DeepFakeVideoTrack` ile sarmalanır
-4. Her kare GPU'da yüz değiştirme → işlenmiş kare WebRTC ile tarayıcıya geri döner
+**WebRTC Flow:**
+1. SDP Offer from React browser → Signaling Server → GPU Worker `/webrtc/offer`
+2. GPU Worker creates an `RTCPeerConnection`
+3. Incoming video track is wrapped with `DeepFakeVideoTrack`
+4. Each frame undergoes face swapping on the GPU → processed frame is returned to the browser via WebRTC
 
-**Ek Endpoint'ler:**
-- `POST /api/chat` — Metin gönder, AI yanıtı + ses sentezi al
-- `GET /api/voices` — Mevcut ses profillerini listele
-- `POST /api/upload-voice` — Yeni ses kaydı yükle (FFmpeg ile WAV'a dönüştürülür)
-- `GET /health` — CUDA durumu ve aktif bağlantı sayısı
+**Additional Endpoints:**
+- `POST /api/chat` — Send text, receive AI response + synthesized audio
+- `GET /api/voices` — List available voice profiles
+- `POST /api/upload-voice` — Upload a new voice recording (converted to WAV via FFmpeg)
+- `GET /health` — CUDA status and active connection count
 
 ---
 
 ### 2. Signaling Server (`aws_server/signaling/`)
 
-Hafif WebSocket relay sunucusu. Tarayıcı ile GPU Worker arasında SDP/ICE mesajlarını iletir.
+Lightweight WebSocket relay server. It forwards SDP/ICE messages between the browser and the GPU Worker.
 
-**İki bağlantı modu:**
+**Two connection modes:**
 
-| Mod | Açıklama |
+| Mode | Description |
 |-----|----------|
 | **HTTP Proxy** | React → WS → Signaling → HTTP POST → GPU Worker (`:8001`) |
-| **WS Relay** | GPU Worker `/ws/worker` ile kalıcı bağlantı kurar, mesajları iki yönlü iletir |
+| **WS Relay** | Establishes a persistent connection with GPU Worker via `/ws/worker`, forwarding messages bidirectionally |
 
-**Endpoint'ler:**
-- `WS /ws/signal/{client_id}` — React istemci bağlantısı
-- `WS /ws/worker` — GPU Worker kalıcı bağlantısı (Ngrok-free modu)
-- `GET /health` — Worker ve istemci bağlantı durumu
+**Endpoints:**
+- `WS /ws/signal/{client_id}` — React client connection
+- `WS /ws/worker` — GPU Worker persistent connection (Ngrok-free mode)
+- `GET /health` — Worker and client connection status
 
-Docker desteği mevcuttur (`Dockerfile`).
+Docker support is available (`Dockerfile`).
 
 ---
 
 ### 3. React Frontend (`aws_server/frontend/`)
 
-Vite 8 + React 19 ile geliştirilmiş modern SPA.
+Modern SPA built with Vite 8 + React 19.
 
-**Dizin yapısı:**
+**Directory Structure:**
 ```
 src/
-├── App.jsx                  ← Ana uygulama (yüz seçimi, video görüntüleme, chat)
-├── index.css                ← Global stiller
-├── App.css                  ← Bileşen stilleri
+├── App.jsx                  ← Main application (face selection, video display, chat)
+├── index.css                ← Global styles
+├── App.css                  ← Component styles
 ├── main.jsx                 ← React entry point
 ├── hooks/
-│   ├── useWebRTC.js         ← WebRTC bağlantı yönetimi (SDP, ICE, track)
-│   ├── useMediaConstraints.js ← Kamera/mikrofon izinleri ve kısıtlamaları
-│   └── useAsyncModules.js   ← Ekran paylaşım & kayıt modülleri lazy-load
+│   ├── useWebRTC.js         ← WebRTC connection management (SDP, ICE, track)
+│   ├── useMediaConstraints.js ← Camera/microphone permissions and constraints
+│   └── useAsyncModules.js   ← Lazy-loading for screen share & record modules
 ├── components/
-│   └── VideoTile.jsx        ← Video akışı görüntüleme bileşeni
+│   └── VideoTile.jsx        ← Video stream display component
 └── modules/
-    ├── VoiceCloneModule.js  ← Ses kayıt, yükleme ve klonlama
-    ├── ScreenShareModule.js ← Ekran paylaşımı
-    └── MeetingRecordModule.js ← Toplantı kaydı (MediaRecorder)
+    ├── VoiceCloneModule.js  ← Voice recording, uploading, and cloning
+    ├── ScreenShareModule.js ← Screen sharing
+    └── MeetingRecordModule.js ← Meeting recording (MediaRecorder)
 ```
 
 ---
 
 ### 4. TTS Microservice (`tts_service/`)
 
-İzole Python 3.10 ortamında çalışan ses klonlama servisi.
+Voice cloning service running in an isolated Python 3.10 environment.
 
-| Dosya | Görev |
+| File | Purpose |
 |-------|-------|
-| `tts_service.py` | FastAPI sunucu — XTTSv2 model yükleme ve ses sentezi |
-| `references/` | Referans ses dosyaları (`kayit_1.wav`, `kayit_2.wav`, `ata.wav`, vb.) |
-| `requirements_tts.txt` | Bağımlılıklar: `TTS`, `torch`, `torchaudio` |
+| `tts_service.py` | FastAPI server — XTTSv2 model loading and voice synthesis |
+| `references/` | Reference voice files (`sample_1.wav`, `sample_2.wav`, etc.) |
+| `requirements_tts.txt` | Dependencies: `TTS`, `torch`, `torchaudio` |
 
-**Endpoint:** `POST /generate-audio/` — Metin + referans ses → sentezlenmiş WAV dosyası
+**Endpoint:** `POST /generate-audio/` — Text + reference audio → synthesized WAV file
 
 ---
 
-### 5. Paylaşılan Modüller (`modules/`)
+### 5. Shared Modules (`modules/`)
 
-| Modül | Açıklama |
+| Module | Description |
 |-------|----------|
-| `face_swap.py` | **FaceSwapper** — InsightFace + Inswapper ONNX modeli ile yüz değiştirme. CUDA öncelikli, CPU fallback. 6 adet hazır yüz modeli. |
-| `voice_cloning.py` | **VoiceCloner** — TTS Microservice (`:8002`) ile HTTP üzerinden haberleşen async istemci |
-| `conversation.py` | **ConversationManager** — Google Gemini 2.5 Flash API ile persona bazlı sohbet + güvenli loglama |
+| `face_swap.py` | **FaceSwapper** — Face swapping using InsightFace + Inswapper ONNX model. CUDA prioritized, CPU fallback. Contains pre-configured face models. |
+| `voice_cloning.py` | **VoiceCloner** — Async client communicating with the TTS Microservice (`:8002`) over HTTP |
+| `conversation.py` | **ConversationManager** — Persona-based chat + secure logging using Google Gemini API |
 
 ---
 
-### 6. Değerlendirme (`evaluation/`)
+### 6. Evaluation (`evaluation/`)
 
-| Metrik | Fonksiyon | Açıklama |
+| Metric | Function | Description |
 |--------|-----------|----------|
-| MCD | `calculate_mcd()` | Mel-Cepstral Distortion — ses kalite ölçümü (DTW hizalı) |
-| SNR | `calculate_snr()` | Signal-to-Noise Ratio — ses gürültü oranı |
-| SSIM | `calculate_ssim()` | Structural Similarity Index — görüntü yapısal benzerliği |
-| PSNR | `calculate_psnr()` | Peak Signal-to-Noise Ratio — görüntü kalitesi |
-| Latency | `measure_latency()` | Uçtan uca gecikme ölçümü (ms) |
+| MCD | `calculate_mcd()` | Mel-Cepstral Distortion — audio quality measurement (DTW aligned) |
+| SNR | `calculate_snr()` | Signal-to-Noise Ratio — audio noise ratio |
+| SSIM | `calculate_ssim()` | Structural Similarity Index — image structural similarity |
+| PSNR | `calculate_psnr()` | Peak Signal-to-Noise Ratio — image quality |
+| Latency | `measure_latency()` | End-to-end latency measurement (ms) |
 
 ---
 
-### 7. Alternatif Giriş Noktası (`main.py`)
+### 7. Alternative Entry Point (`main.py`)
 
-Kök dizindeki `main.py`, GPU Worker'ın **Ngrok'suz** doğrudan WebSocket modudur. AWS Signaling Server'a `ws://host:8000/ws/worker` üzerinden bağlanır ve SDP/ICE alışverişini WS mesajları ile yapar. HTTP endpoint'i yoktur.
-
----
-
-### 8. Legacy Arayüz (`web/`)
-
-Eski mimari için Socket.IO tabanlı vanilya HTML/CSS/JS arayüzü. Artık aktif olarak kullanılmamaktadır; WebRTC tabanlı React frontend (`aws_server/frontend/`) onun yerini almıştır.
+The `main.py` file in the root directory serves as the direct WebSocket mode for the GPU Worker **without Ngrok**. It connects to the AWS Signaling Server via `ws://host:8000/ws/worker` and exchanges SDP/ICE via WS messages. It does not have an HTTP endpoint.
 
 ---
 
-## 📁 Dosya Yapısı
+### 8. Legacy Interface (`web/`)
 
-```
+Socket.IO based vanilla HTML/CSS/JS interface for the old architecture. It is no longer actively used; the WebRTC-based React frontend (`aws_server/frontend/`) has replaced it.
+
+---
+
+## Directory Structure
+
+```text
 DeepFake/
 ├── aws_server/
 │   ├── signaling/
@@ -233,14 +233,14 @@ DeepFake/
 │   │   └── Dockerfile
 │   ├── frontend/                ← React 19 + Vite 8 SPA
 │   │   ├── src/
-│   │   │   ├── App.jsx          ← Ana uygulama bileşeni
+│   │   │   ├── App.jsx          ← Main application component
 │   │   │   ├── index.css / App.css
 │   │   │   ├── hooks/           ← useWebRTC, useMediaConstraints, useAsyncModules
 │   │   │   ├── components/      ← VideoTile
 │   │   │   └── modules/         ← VoiceClone, ScreenShare, MeetingRecord
 │   │   ├── package.json
 │   │   └── vite.config.js
-│   └── venv/                    ← Signaling Server sanal ortamı
+│   └── venv/                    ← Signaling Server virtual environment
 │
 ├── gpu_worker/
 │   ├── api.py                   ← FastAPI GPU Worker (WebRTC + REST API)
@@ -248,13 +248,13 @@ DeepFake/
 │   ├── requirements.txt
 │   ├── start_worker.bat
 │   ├── start_ngrok.bat
-│   └── venv/                    ← GPU Worker sanal ortamı
+│   └── venv/                    ← GPU Worker virtual environment
 │
 ├── tts_service/
 │   ├── tts_service.py           ← XTTSv2 FastAPI Microservice
-│   ├── references/              ← Referans ses dosyaları (WAV)
+│   ├── references/              ← Reference voice files (WAV)
 │   ├── requirements_tts.txt
-│   └── venv/                    ← TTS izole sanal ortamı (Python 3.10)
+│   └── venv/                    ← TTS isolated virtual environment (Python 3.10)
 │
 ├── modules/
 │   ├── face_swap.py             ← FaceSwapper (InsightFace + CUDA)
@@ -263,77 +263,77 @@ DeepFake/
 │
 ├── data/
 │   ├── models/
-│   │   └── inswapper_128.onnx   ← Yüz değiştirme ONNX modeli (~530MB)
+│   │   └── inswapper_128.onnx   ← Face swap ONNX model (~530MB)
 │   └── source_faces/
-│       ├── face1.png ... face6.jpeg  ← 6 adet kaynak yüz görseli
+│       ├── face1.png ...        ← Source face images
 │
 ├── evaluation/
-│   └── metrics.py               ← MCD, SNR, SSIM, PSNR, Latency metrikleri
+│   └── metrics.py               ← MCD, SNR, SSIM, PSNR, Latency metrics
 │
-├── web/                         ← [LEGACY] Socket.IO tabanlı eski arayüz
+├── web/                         ← [LEGACY] Socket.IO based old interface
 │   ├── index.html
 │   ├── script.js
 │   └── style.css
 │
-├── outputs/                     ← Üretilen ses dosyaları ve loglar
-├── main.py                      ← Ngrok-free WS modu (alternatif giriş)
-├── start_all.bat                ← Tüm servisleri tek seferde başlatma
-├── requirements.txt             ← Ana proje bağımlılıkları
-├── .env.example                 ← Örnek ortam değişkenleri
+├── outputs/                     ← Generated audio files and logs
+├── main.py                      ← Ngrok-free WS mode (alternative entry point)
+├── start_all.bat                ← Start all services script
+├── requirements.txt             ← Main project dependencies
+├── .env.example                 ← Example environment variables
 └── .gitignore
 ```
 
 ---
 
-## ⚙ Teknoloji Yığını
+## Technology Stack
 
 ### Backend
 
-| Teknoloji | Kullanım Alanı |
+| Technology | Usage |
 |-----------|----------------|
 | **Python 3.9 / 3.10** | GPU Worker, Signaling, TTS |
-| **FastAPI** | Tüm backend API sunucuları |
-| **aiortc** | Python tarafında WebRTC (P2P video) |
-| **InsightFace** (`buffalo_l`) | Yüz algılama (FaceAnalysis) |
-| **Inswapper** (ONNX) | Yüz değiştirme modeli |
-| **ONNXRuntime-GPU** | CUDA hızlandırmalı model çıkarımı |
-| **Coqui TTS (XTTSv2)** | Zero-shot çok dilli ses klonlama |
-| **Google Gemini 2.5 Flash** | AI sohbet yanıtları |
-| **PyTorch + CUDA** | GPU hesaplama altyapısı |
-| **OpenCV** | Görüntü işleme |
-| **FFmpeg** (imageio-ffmpeg) | Ses format dönüşümü |
+| **FastAPI** | All backend API servers |
+| **aiortc** | WebRTC in Python (P2P video) |
+| **InsightFace** (`buffalo_l`) | Face detection (FaceAnalysis) |
+| **Inswapper** (ONNX) | Face swapping model |
+| **ONNXRuntime-GPU** | CUDA-accelerated model inference |
+| **Coqui TTS (XTTSv2)** | Zero-shot multilingual voice cloning |
+| **Google Gemini API** | AI chat responses |
+| **PyTorch + CUDA** | GPU computation framework |
+| **OpenCV** | Image processing |
+| **FFmpeg** (imageio-ffmpeg) | Audio format conversion |
 
 ### Frontend
 
-| Teknoloji | Versiyon |
+| Technology | Version |
 |-----------|---------|
 | **React** | 19.2 |
 | **Vite** | 8.0 |
 | **WebRTC API** | RTCPeerConnection, getUserMedia |
-| **WebSocket** | Sinyalizasyon kanalı |
-| **MediaRecorder** | Toplantı kaydı |
+| **WebSocket** | Signaling channel |
+| **MediaRecorder** | Meeting recording |
 
-### Altyapı
+### Infrastructure
 
-| Bileşen | Açıklama |
+| Component | Description |
 |---------|----------|
-| **NVIDIA RTX 3050 Ti** | Yerel GPU (CUDA 12.x) |
-| **AWS t2.micro** | Signaling Server (opsiyonel) |
-| **Ngrok / Cloudflare Tunnel** | GPU Worker dışa açma (opsiyonel) |
-| **Docker** | Signaling Server konteynerizasyon |
+| **NVIDIA RTX 3050 Ti** | Local GPU (CUDA 12.x) |
+| **AWS t2.micro** | Signaling Server (optional) |
+| **Ngrok / Cloudflare Tunnel** | GPU Worker exposure (optional) |
+| **Docker** | Signaling Server containerization |
 
 ---
 
-## 🚀 Kurulum & Başlatma
+## Installation and Setup
 
-### Hızlı Başlatma (Tek Komut)
+### Quick Start (Single Command)
 
 ```bash
-# Tüm 4 servisi ayrı PowerShell pencerelerinde başlatır
+# Starts all 4 services in separate PowerShell windows
 start_all.bat
 ```
 
-### Manuel Başlatma
+### Manual Start
 
 #### 1. GPU Worker (Terminal 1)
 ```bash
@@ -362,9 +362,9 @@ venv\Scripts\activate
 uvicorn tts_service:app --host 127.0.0.1 --port 8002
 ```
 
-### Port Özeti
+### Port Summary
 
-| Servis | Port | Protokol |
+| Service | Port | Protocol |
 |--------|------|----------|
 | Signaling Server | 8000 | HTTP + WebSocket |
 | GPU Worker | 8001 | HTTP (WebRTC via aiortc) |
@@ -373,38 +373,38 @@ uvicorn tts_service:app --host 127.0.0.1 --port 8002
 
 ---
 
-## 📡 API Endpoint'leri
+## API Endpoints
 
 ### GPU Worker (`:8001`)
 
-| Method | Endpoint | Açıklama |
+| Method | Endpoint | Description |
 |--------|----------|----------|
-| `GET` | `/health` | CUDA durumu, GPU adı, aktif bağlantı sayısı |
-| `POST` | `/webrtc/offer` | SDP Offer al → Answer dön (WebRTC başlat) |
-| `POST` | `/webrtc/ice` | Trickle ICE adayı ekle |
-| `POST` | `/api/set-face-model/{client_id}` | Aktif yüz modelini değiştir |
-| `POST` | `/api/chat` | Mesaj gönder → AI yanıt + ses sentezi |
-| `GET` | `/api/voices` | Mevcut ses profillerini listele |
-| `POST` | `/api/upload-voice` | Yeni ses kaydı yükle (multipart/form-data) |
-| `GET` | `/outputs/{filename}` | Statik ses dosyalarını sun |
+| `GET` | `/health` | CUDA status, GPU name, active connection count |
+| `POST` | `/webrtc/offer` | Receive SDP Offer → Return Answer (Start WebRTC) |
+| `POST` | `/webrtc/ice` | Add trickle ICE candidate |
+| `POST` | `/api/set-face-model/{client_id}` | Change active face model |
+| `POST` | `/api/chat` | Send message → AI response + audio synthesis |
+| `GET` | `/api/voices` | List available voice profiles |
+| `POST` | `/api/upload-voice` | Upload new voice recording (multipart/form-data) |
+| `GET` | `/outputs/{filename}` | Serve static audio files |
 
 ### Signaling Server (`:8000`)
 
-| Method | Endpoint | Açıklama |
+| Method | Endpoint | Description |
 |--------|----------|----------|
-| `GET` | `/health` | Worker ve istemci bağlantı durumu |
-| `WS` | `/ws/signal/{client_id}` | React istemci sinyalizasyonu |
-| `WS` | `/ws/worker` | GPU Worker kalıcı WS bağlantısı |
+| `GET` | `/health` | Worker and client connection status |
+| `WS` | `/ws/signal/{client_id}` | React client signaling |
+| `WS` | `/ws/worker` | GPU Worker persistent WS connection |
 
 ### TTS Microservice (`:8002`)
 
-| Method | Endpoint | Açıklama |
+| Method | Endpoint | Description |
 |--------|----------|----------|
-| `POST` | `/generate-audio/` | Metin + referans ses → sentezlenmiş WAV |
+| `POST` | `/generate-audio/` | Text + reference audio → synthesized WAV |
 
 ---
 
-## 🔐 Ortam Değişkenleri
+## Environment Variables
 
 ```env
 # GPU Worker
@@ -414,100 +414,75 @@ GPU_WORKER_PORT=8001
 GPU_WORKER_URL=http://127.0.0.1:8001
 
 # React Frontend (.env)
-VITE_SIGNALING_WS_URL=wss://AWS_IP_VEYA_DOMAIN:8000
+VITE_SIGNALING_WS_URL=wss://AWS_IP_OR_DOMAIN:8000
 
-# Gemini AI (proje kökü .env)
+# Gemini AI (project root .env)
 GEMINI_API_KEY=your_api_key_here
 ```
 
 ---
 
-## ⚡ Performans Optimizasyonları
+## Performance Optimizations
 
 ### GPU Worker v2 — `rtc_worker.py`
 
-| Optimizasyon | Mekanizma | Kazanım |
+| Optimization | Mechanism | Gain |
 |-------------|-----------|---------|
-| **FaceBBoxCache** | Her 3 karede 1 tam yüz algılama, arada cache kullanımı | ~%60-70 detection yükü azalması |
-| **AdaptiveFrameDropper** | İşleme süresi hareketli ortalamasına göre dinamik kare atlama | GPU aşırı yüklendiğinde latency koruması |
-| **Singleton FaceSwapper** | `get_face_swapper()` ile tek seferlik GPU model yüklemesi | Bellek ve başlatma optimizasyonu |
-| **Executor offload** | `run_in_executor()` ile frame işleme ayrı thread'de | asyncio event loop bloklanmaz |
-| **CUDA Provider** | ONNXRuntime CUDAExecutionProvider + optimize ayarlar | CPU'ya göre ~10x hız artışı |
-| **Isınma turu** | Sunucu başlangıcında modeller önceden VRAM'e yüklenir | İlk kare gecikmesi yok |
+| **FaceBBoxCache** | Full face detection every 3 frames, cache used in between | ~60-70% reduction in detection load |
+| **AdaptiveFrameDropper** | Dynamic frame dropping based on moving average of processing time | Latency protection under heavy GPU load |
+| **Singleton FaceSwapper** | One-time GPU model loading via `get_face_swapper()` | Memory and initialization optimization |
+| **Executor offload** | Frame processing in separate thread via `run_in_executor()` | Prevents blocking the asyncio event loop |
+| **CUDA Provider** | ONNXRuntime CUDAExecutionProvider + optimized settings | ~10x speedup compared to CPU |
+| **Warm-up pass** | Models preloaded into VRAM at server startup | No initial frame latency |
 
-### İstatistik Loglama
+### Statistics Logging
 
-Her 30 saniyede bir konsola performans raporu yazılır:
-```
+A performance report is written to the console every 30 seconds:
+```text
 [Stats] FPS: 14.8 | Skip: 1x | Avg process: 62.3ms | Cache hit: 66.7% | face_model: face1
 ```
 
 ---
 
-## 📊 Değerlendirme Metrikleri
+## Evaluation Metrics
 
-`evaluation/metrics.py` dosyasında tanımlanan kalite ölçüm fonksiyonları:
+Quality measurement functions defined in the `evaluation/metrics.py` file:
 
-| Metrik | Fonksiyon | Hedef |
+| Metric | Function | Target |
 |--------|-----------|-------|
-| **MCD** (Mel-Cepstral Distortion) | `calculate_mcd()` | Klonlanmış ses kalitesi (düşük = iyi) |
-| **SNR** (Signal-to-Noise Ratio) | `calculate_snr()` | Ses sinyal/gürültü oranı (yüksek = iyi) |
-| **SSIM** (Structural Similarity) | `calculate_ssim()` | DeepFake görüntü yapısal benzerliği |
-| **PSNR** (Peak SNR) | `calculate_psnr()` | Görüntü piksel kalitesi |
-| **Latency** | `measure_latency()` | Uçtan uca sistem gecikmesi (ms) |
+| **MCD** (Mel-Cepstral Distortion) | `calculate_mcd()` | Cloned voice quality (lower = better) |
+| **SNR** (Signal-to-Noise Ratio) | `calculate_snr()` | Voice signal-to-noise ratio (higher = better) |
+| **SSIM** (Structural Similarity) | `calculate_ssim()` | Deepfake image structural similarity |
+| **PSNR** (Peak SNR) | `calculate_psnr()` | Image pixel quality |
+| **Latency** | `measure_latency()` | End-to-end system latency (ms) |
 
 ---
 
-## 🔧 Yüz Modelleri
+## Voice Profiles
 
-`data/source_faces/` dizininde 6 adet hazır kaynak yüz bulunur:
-
-| Model ID | Dosya |
-|----------|-------|
-| `face1` | `face1.png` |
-| `face2` | `face2.png` |
-| `face3` | `face3.jpeg` |
-| `face4` | `face4.jpeg` |
-| `face5` | `face5.jpeg` |
-| `face6` | `face6.jpeg` |
-
-Yüz değiştirme modeli: `data/models/inswapper_128.onnx` (~530 MB)
+New voice profiles can be recorded from the browser via the `POST /api/upload-voice` endpoint and are automatically numbered in `kayit_X.wav` format inside `tts_service/references/`.
 
 ---
 
-## 🎤 Ses Profilleri
+## Security Features
 
-`tts_service/references/` dizinindeki WAV dosyaları:
-
-| Dosya | Açıklama |
-|-------|----------|
-| `kayit_1.wav`, `kayit_2.wav` | Kullanıcı mikrofon kayıtları |
-| `ata.wav`, `aziz.wav`, `fatih.wav`, `okan.wav`, `rte.wav` | Hazır kişi referansları |
-| `prime.wav` | Uzun referans ses kaydı |
-
-Yeni ses profilleri `POST /api/upload-voice` endpoint'i ile tarayıcıdan kaydedilip otomatik olarak `kayit_X.wav` formatında numaralandırılır.
+- **Watermark:** `"AI GENERATED - DEEPFAKE"` text is added to every processed video frame.
+- **Chat Logging:** All conversations are Base64 encoded and written to `outputs/secure_conversation_log.txt`.
+- **CORS:** All services are open during development with `allow_origins=["*"]`.
+- **WebRTC:** HTTPS is mandatory in the browser (`getUserMedia` policy).
 
 ---
 
-## 🔒 Güvenlik Özellikleri
+## FAQ
 
-- **Filigran:** Her işlenmiş video karesine `"AI GENERATED - DEEPFAKE"` metni eklenir
-- **Sohbet Loglama:** Tüm konuşmalar Base64 ile kodlanarak `outputs/secure_conversation_log.txt`'e yazılır
-- **CORS:** Tüm servisler geliştirme aşamasında `allow_origins=["*"]` ile açıktır
-- **WebRTC:** Tarayıcıda HTTPS zorunludur (`getUserMedia` politikası)
+**Is there an alternative to Ngrok?**
+Yes, Cloudflare Tunnel can be used: `cloudflared tunnel --url http://localhost:8001`
 
----
+**WebRTC is not working on some networks?**
+If you are behind a symmetric NAT, add a TURN server. Enter the TURN configuration into the `ICE_SERVERS` array in `useWebRTC.js`.
 
-## ❓ SSS
+**How do I set up HTTPS?**
+Use AWS Certificate Manager + ALB or Let's Encrypt + Nginx reverse proxy.
 
-**Ngrok yerine alternatif var mı?**
-Evet, Cloudflare Tunnel kullanılabilir: `cloudflared tunnel --url http://localhost:8001`
-
-**WebRTC bazı ağlarda çalışmıyor?**
-Simetrik NAT arkasındaysanız TURN sunucusu ekleyin. `useWebRTC.js` → `ICE_SERVERS` dizisine TURN konfigürasyonu girin.
-
-**HTTPS nasıl kurarım?**
-AWS Certificate Manager + ALB veya Let's Encrypt + Nginx reverse proxy kullanın.
-
-**TTS servisi neden ayrı?**
-XTTSv2 Python 3.10 gerektirir ve ağır bağımlılıkları vardır. İzole sanal ortamda çalışarak ana GPU Worker ile çakışma önlenir.
+**Why is the TTS service separate?**
+XTTSv2 requires Python 3.10 and has heavy dependencies. Running it in an isolated virtual environment prevents conflicts with the main GPU Worker.
