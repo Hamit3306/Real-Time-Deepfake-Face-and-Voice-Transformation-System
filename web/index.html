@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Deepfake Meeting Simulator</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- Main Video Meeting Area -->
+        <main class="meeting-area">
+            <div class="header-bar">
+                <h1>AI Direct Connect</h1>
+                <span class="secure-badge">End-to-end Encrypted • Offline Processing</span>
+            </div>
+
+            <div class="video-grid">
+                <!-- AI Participant Video Container -->
+                <div class="video-container" id="ai-participant">
+                    <div class="placeholder">
+                        <div class="spinner"></div>
+                        <p>Waiting for interaction to start...</p>
+                    </div>
+                    <!-- Hidden video for capturing webcam -->
+                    <video id="webcam-video" autoplay playsinline loop style="display:none;"></video>
+                    <!-- Visible image for AI processed frames via WebSockets -->
+                    <img id="output-video"
+                        style="display:none; width:100%; height:100%; object-fit:cover; border-radius:12px;">
+                    <!-- FR-2.11: Permanent visual watermark -->
+                    <div class="watermark">AI Generated - Parody Mode</div>
+                    <div class="participant-name" id="ai-name-label">AI Persona</div>
+                </div>
+            </div>
+
+            <!-- Bottom controls (Start/Stop/Download) -->
+            <div class="meeting-controls">
+                <button id="start-btn" class="control-btn primary">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Start Interaction
+                </button>
+                <!-- FR-6.5: Download function -->
+                <button id="download-btn" class="control-btn secondary" disabled>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download Capture
+                </button>
+            </div>
+        </main>
+
+        <!-- Sidebar: Settings & Chat -->
+        <aside class="sidebar">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="settings">Config</button>
+                <button class="tab-btn" data-tab="chat">Chat</button>
+            </div>
+
+            <div class="tab-content" id="settings-tab">
+                <div class="sidebar-section">
+                    <h3>Simulation Settings</h3>
+
+                    <!-- FR-6.1 Voice Model -->
+                    <div class="setting-group">
+                        <label for="voice-select">Voice Model</label>
+                        <select id="voice-select">
+                            <option value="acun_ses">Acun</option>
+                            <option value="barıs_manco_ses">Barış Manço</option>
+                            <option value="cem_yılmaz_ses">Cem Yılmaz</option>
+                            <option value="haluk bilginer">Haluk Bilginer</option>
+                            <option value="mazlum biçer">Mazlum Biçer</option>
+                            <option value="sertab erener">Sertab Erener</option>
+                            <option value="yonca evcimik">Yonca Evcimik</option>
+                        </select>
+                    </div>
+
+                    <!-- FR-1.4 to FR-1.6 Voice Controls -->
+                    <div class="setting-group" style="margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                        <label>Speaking Rate <span id="rate-val">1.0</span>x</label>
+                        <input type="range" id="rate-slider" min="0.5" max="2.0" step="0.1" value="1.0"
+                            style="width:100%">
+
+                        <label style="margin-top: 10px;">Pitch Adjustment <span id="pitch-val">0</span> st</label>
+                        <input type="range" id="pitch-slider" min="-12" max="12" step="1" value="0" style="width:100%">
+
+                        <label style="margin-top: 10px;">Emotional Tone</label>
+                        <select id="emotion-select">
+                            <option value="neutral">Neutral (Default)</option>
+                            <option value="happy">Happy & Enthusiastic</option>
+                            <option value="serious">Serious & Authoritative</option>
+                        </select>
+                    </div>
+
+                    <!-- FR-1.7 Live Microphone -->
+                    <div class="setting-group" style="margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                        <button id="mic-btn" class="control-btn primary"
+                            style="width: 100%; font-size: 0.9rem; padding: 10px;">
+                            🎤 Use Live Microphone
+                        </button>
+                        <p style="font-size: 0.75rem; color: #aaa; margin-top: 5px; text-align: center;">Record voice
+                            for Voice Cloning</p>
+                    </div>
+
+                    <!-- FR-6.2 Face Model -->
+                    <div class="setting-group">
+                        <label for="face-select">Face Model</label>
+                        <select id="face-select">
+                            <option value="face1">Tayyip</option>
+                            <option value="face2">Target Persona B</option>
+                            <option value="face3">Target Persona C</option>
+                            <option value="face4">Target Persona D</option>
+                            <option value="face5">burak özcivit</option>
+                            <option value="face6">Target Persona F</option>
+                            <option value="face7">Target Persona 7</option>
+                            <option value="face8">Target Persona 8</option>
+                        </select>
+                    </div>
+
+                    <!-- FR-6.3 Conversation Style -->
+                    <div class="setting-group">
+                        <label for="style-select">Conversation Style</label>
+                        <select id="style-select">
+                            <option value="formal">Formal & Professional</option>
+                            <option value="casual">Casual & Relaxed</option>
+                            <option value="humorous">Humorous</option>
+                        </select>
+                    </div>
+
+                    <!-- FR-4.2 - FR-4.5 Scenarios -->
+                    <div class="setting-group">
+                        <label for="scenario-select">Meeting Scenario</label>
+                        <select id="scenario-select">
+                            <option value="comedy">Comedy Interview</option>
+                            <option value="job_interview">Job Interview Parody</option>
+                            <option value="debate">Friendly Debate</option>
+                            <option value="motivational">Motivational Speech</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FR-3.2 Text-based Chat -->
+            <div class="tab-content hidden" id="chat-tab">
+                <div class="chat-history" id="chat-history">
+                    <div class="message system">System: Interaction initialized. Chat is secure.</div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="Type a message..." disabled>
+                    <button id="send-btn" disabled>Send</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

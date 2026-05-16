@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepFake Room: Meeting & Live Voice (FR 1.8 & 2.9)</title>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #1a1a1a; color: white; display: flex; flex-direction: column; align-items: center; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; width: 80%; }
+        .box { background: #333; border-radius: 12px; padding: 15px; text-align: center; }
+        video, canvas { width: 100%; border-radius: 8px; background: black; margin-top: 10px; max-height: 250px;}
+        button { margin: 10px; padding: 10px 20px; background: #6200ea; color: white; border: none; border-radius: 6px; cursor: pointer; }
+        button:hover { background: #7c4dff; }
+        button.danger { background: #d50000; }
+        button.danger:hover { background: #ff1744; }
+        .log-box { background: #000; color: #0f0; padding: 10px; font-family: monospace; height: 100px; overflow-y: auto; text-align: left; margin-top: 20px; width: 80%; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>Advanced Interaction Room</h1>
+    <p>WebRTC Meeting (FR 2.9, FR 3.1) & Live Voice to Celebrity (FR 1.8)</p>
+
+    <div class="grid">
+        <div class="box">
+            <h3>Local User (You)</h3>
+            <video id="localVideo" autoplay playsinline muted></video>
+            <button id="startCamBtn">1. Start Camera & Mic</button>
+            <button id="startAudioBtn">2. Activate Live Voice (RVC)</button>
+        </div>
+        
+        <div class="box">
+            <h3>Remote Peer (AI or Human)</h3>
+            <video id="remoteVideo" autoplay playsinline></video>
+            <!-- Canvas reserved for Non-Human avatars (FR: Karakter Esnekliği) -->
+            <canvas id="avatarCanvas" style="display:none;"></canvas> 
+            <button id="joinMeetingBtn">3. Join Room</button>
+            <a id="downloadLink" style="display:none;" href="#" download="generated_output.wav">
+                <button style="background: #00c853;">Download Interaction Record</button>
+            </a>
+        </div>
+    </div>
+
+    <div class="log-box" id="devLogs">System Initialized. Awaiting user action... (FR 3.5 Log Tracked)</div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const startCamBtn = document.getElementById('startCamBtn');
+        const startAudioBtn = document.getElementById('startAudioBtn');
+        const joinMeetingBtn = document.getElementById('joinMeetingBtn');
+        const logBox = document.getElementById('devLogs');
+
+        let localStream = null;
+        let socket = io(); // Connects to existing flask-socketio 
+        let peerConnection = null;
+        
+        // WebRTC Configuration
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        function log(msg) {
+            logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        // FR 1.8: Live Voice Audio Context Elements
+        let mediaRecorder = null;
+        let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        startCamBtn.addEventListener('click', async () => {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+                log("Camera & Mic active.");
+            } catch (err) {
+                log("Error: " + err.message);
+            }
+        });
+
+        // FR 1.8: Live Voice to Celebrity Voice Chunking Logic
+        startAudioBtn.addEventListener('click', () => {
+            if (!localStream) return alert("Start Camera & Mic first!");
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                startAudioBtn.innerText = "2. Activate Live Voice (RVC)";
+                startAudioBtn.classList.remove('danger');
+                log("Live Voice (RVC) Deactivated.");
+                return;
+            }
+
+            // Start streaming audio chunks to WebSocket for RVC translation
+            mediaRecorder = new MediaRecorder(localStream, { mimeType: 'audio/webm' });
+            mediaRecorder.ondataavailable = async (e) => {
+                if (e.data.size > 0) {
+                    const arrayBuffer = await e.data.arrayBuffer();
+                    socket.emit('audio_chunk', { audio: arrayBuffer });
+                }
+            };
+            
+            mediaRecorder.start(500); // 500ms chunks for Low Latency
+            startAudioBtn.innerText = "Stop Live Voice";
+            startAudioBtn.classList.add('danger');
+            log("Live Voice active: Sending chunks to RVC backend...");
+        });
+
+        // FR 2.9, FR 3.1: Video Meeting WebRTC Logic
+        joinMeetingBtn.addEventListener('click', () => {
+            if (!localStream) return alert("Start Camera first.");
+            
+            socket.emit('join_meeting', { room_id: 'lobby_1' });
+            log("Joined Room 'lobby_1'. Initializing WebRTC...");
+            
+            setupPeerConnection();
+        });
+
+        function setupPeerConnection() {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+            
+            // Add local stream to connection
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            // Listen for remote tracks
+            peerConnection.ontrack = (event) => {
+                log("Remote track received (Face-swapped peer or AI).");
+                if (!remoteVideo.srcObject) remoteVideo.srcObject = event.streams[0];
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('webrtc_ice_candidate', { target: 'lobby_1', candidate: event.candidate });
+                }
+            };
+        }
+
+        // --- Socket Listeners (Signaling) ---
+        socket.on('user_joined', async (data) => {
+            log(`Peer joined: ${data.participant_id}. Sending Offer...`);
+            setupPeerConnection();
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('webrtc_offer', { target: 'lobby_1', offer: offer });
+        });
+
+        socket.on('webrtc_offer', async (data) => {
+            if (data.sender === socket.id) return;
+            log("Offer received. Sending Answer...");
+            if (!peerConnection) setupPeerConnection();
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('webrtc_answer', { target: 'lobby_1', answer: answer });
+        });
+
+        socket.on('webrtc_answer', async (data) => {
+            if (data.sender === socket.id) return;
+            log("Answer received. Connection established.");
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        });
+
+        socket.on('webrtc_ice_candidate', async (data) => {
+            if (data.sender === socket.id) return;
+            if (peerConnection) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        });
+
+        // FR 1.8: Receiving Converted Live Voice from Backend
+        socket.on('converted_audio', async (data) => {
+            // Play back the RVC converted audio bytes
+            const audioData = data.audio;
+            audioContext.decodeAudioData(audioData, (buffer) => {
+                let source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+                source.start(0);
+            });
+            
+            // FR-6.5: Expose download for the latest interaction audio
+            const blob = new Blob([data.audio], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.getElementById('downloadLink');
+            downloadLink.href = url;
+            downloadLink.style.display = 'inline-block';
+            log("Download link generated for interaction.");
+        });
+
+    </script>
+</body>
+</html>

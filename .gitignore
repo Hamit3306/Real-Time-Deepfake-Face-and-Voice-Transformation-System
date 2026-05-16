@@ -1,0 +1,25 @@
+.conda/
+.venv/
+.venv_deepfake/
+__pycache__/
+*.pyc
+outputs/
+pip_error.txt
+.vscode/
+.env
+
+*.onnx
+*.pth
+*.pt
+# Kurulumlar ve Yeni Sanal Ortamlar
+venv/
+env_deepfake/
+.idea/
+*.whl
+*.zip
+*.exe
+pip_out*.txt
+test*.wav
+test_error.txt
+req_bypass.txt
+srs_text.txt
